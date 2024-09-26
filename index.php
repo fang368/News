@@ -5,14 +5,22 @@ session_start();
 
 $userID = isset($_SESSION['user_id']) ? $_SESSION['user_id'] : null;
 
+// Получаем категорию из URL (если есть)
+$selected_category = isset($_GET['category']) ? $_GET['category'] : null;
 
+// Получаем период из формы (по умолчанию - неделя)
+$period = isset($_GET['period']) ? $_GET['period'] : 'week';
 
-
-
-// Запрос для получения данных статей и авторов
+// Основной SQL-запрос для получения статей
 $sql = "SELECT post.id, post.title, post.text, post.created_at, users.full_name, users.profile_image 
         FROM post 
         JOIN users ON post.author = users.id";
+
+// Если категория выбрана, добавляем условие WHERE
+if ($selected_category) {
+    $sql .= " JOIN category ON post.category = category.id WHERE category.title = '" . mysqli_real_escape_string($conn, $selected_category) . "'";
+}
+
 $result = mysqli_query($conn, $sql);
 
 // Проверка выполнения запроса
@@ -22,16 +30,26 @@ if (!$result) {
     $posts = mysqli_fetch_all($result, MYSQLI_ASSOC);
 }
 
-// Запрос для получения категорий с наибольшим количеством комментариев (максимум 4 категории)
+// Устанавливаем временной диапазон в зависимости от выбранного периода
+$time_condition = '';
+if ($period == 'month') {
+    $time_condition = " AND comments.created_at >= DATE_SUB(NOW(), INTERVAL 1 MONTH)";
+} else {
+    // По умолчанию - неделя
+    $time_condition = " AND comments.created_at >= DATE_SUB(NOW(), INTERVAL 1 WEEK)";
+}
+
+// Запрос для получения категорий с наибольшим количеством комментариев за выбранный период (максимум 6 категорий)
 $category_comments_sql = "
     SELECT category.title AS category_title, COUNT(comments.id) AS comments_count 
     FROM comments
     JOIN post ON comments.post_id = post.id
     JOIN category ON post.category = category.id
+    WHERE 1=1 $time_condition
     GROUP BY category.id
     ORDER BY comments_count DESC
     LIMIT 6";
-    
+
 $category_comments_result = mysqli_query($conn, $category_comments_sql);
 
 if (!$category_comments_result) {
@@ -39,7 +57,6 @@ if (!$category_comments_result) {
 } else {
     $top_categories = mysqli_fetch_all($category_comments_result, MYSQLI_ASSOC);
 }
-
 ?>
 
 <!DOCTYPE html>
@@ -283,7 +300,7 @@ if (!$category_comments_result) {
                         <a href="#" class="second-section__recommendation-link text_author text_author-black">War Is Hell? In New Military Dramas, It's One-Dimensional</a>
                     </li>
 
-                    <li class="second-section__recommendation-item">
+                    <li class="second-section__recommendation-item">    
                         <span class="second-section__recommendation-category text_green">NFL</span>
                         <a href="#" class="second-section__recommendation-link text_author text_author-black">11 surprising stat rankings for active NFL players</a>
                     </li>
@@ -342,21 +359,32 @@ if (!$category_comments_result) {
             <div class="third-section__aside-container">
                 <div class="third-section__aside aside__card">
                     <h3 class="third-section__titlle text_white">Top Categories by Comments</h3>
+                    <!-- Форма для выбора периода -->
+                    <form method="GET" action="">
+                        <select name="period" onchange="this.form.submit()">
+                            <option value="week" <?php if ($period == 'week') echo 'selected'; ?>>Неделя</option>
+                            <option value="month" <?php if ($period == 'month') echo 'selected'; ?>>Месяц</option>
+                        </select>
+                    </form>
                 </div>
                 <hr>
                 <?php if (!empty($top_categories)): ?>
+                    <div class="third-section__aside aside__card">
+                        <a href="index.php?category=" class="third-section__text text_aside">Все категории</a>
+                    </div>
+                    <hr>
                     <?php foreach ($top_categories as $category): ?>
                         <div class="third-section__aside aside__card">
-                            <p class="third-section__text text_aside">
+                            <a href="index.php?category=<?= urlencode($category['category_title']) ?>" class="third-section__text text_aside">
                                 <?= htmlspecialchars($category['category_title']) ?>
-                                (<?= htmlspecialchars($category['comments_count']) ?> comments)
-                            </p>
+                                (<?= htmlspecialchars($category['comments_count']) ?> комментариев)
+                            </a>
                         </div>
                         <hr>
                     <?php endforeach; ?>
                 <?php else: ?>
                     <div class="third-section__aside aside__card">
-                        <p class="third-section__text text_aside">No categories available</p>
+                        <p class="third-section__text text_aside">Нет доступных категорий</p>
                     </div>
                     <hr>
                 <?php endif; ?>
@@ -364,6 +392,8 @@ if (!$category_comments_result) {
                     <a href="#" class="third-section__titlle text_white">Read More</a>
                 </div>
             </div>
+
+
 
         </div>
     </div>
